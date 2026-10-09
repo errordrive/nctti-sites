@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{SUBDOMAIN}} — My Site</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<nav class="nav">
+  <span class="logo"><span class="dot"></span>{{SUBDOMAIN}}</span>
+  <a class="btn" href="about.html">About</a>
+</nav>
+
+<header class="hero">
+  <div class="badge">Your site is live</div>
+  <h1>Hello, world.<br>This is <span>{{SUBDOMAIN}}</span></h1>
+  <p class="url" id="site-url"></p>
+  <p class="lede">This page is <code>index.html</code> — the file you're looking at right now. Edit it, replace it, or upload your own files. Everything updates instantly.</p>
+</header>
+
+<main>
+  <h2>How hosting works here</h2>
+  <div class="cards">
+    <div class="card">
+      <div class="n">1</div>
+      <h3>Files become URLs</h3>
+      <p>Every file you upload gets a web address, automatically:</p>
+      <table>
+        <tr><td><code>/index.html</code></td><td>→</td><td>your homepage</td></tr>
+        <tr><td><code>/about.html</code></td><td>→</td><td><a href="about.html">/about.html</a></td></tr>
+        <tr><td><code>/images/photo.jpg</code></td><td>→</td><td>an image URL</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <div class="n">2</div>
+      <h3>index.html is the front door</h3>
+      <p>When someone visits your domain, the server looks for <code>index.html</code> first. No index file, no homepage — that's the only rule.</p>
+    </div>
+    <div class="card">
+      <div class="n">3</div>
+      <h3>Manage it like cPanel</h3>
+      <p>Open your <b>dashboard → Files</b> to browse, upload, preview and delete files — just like a hosting control panel, but simpler.</p>
+    </div>
+  </div>
+
+  <h2>Try it right now</h2>
+  <ol class="steps">
+    <li>Open your dashboard and go to <b>Files</b> for this site.</li>
+    <li>Upload any file — say <code>hello.txt</code> with some text in it.</li>
+    <li>Visit <code>/<span id="demo-path">hello.txt</span></code> on your domain. It's live.</li>
+  </ol>
+
+  <div class="cta">
+    <h3>Make it yours</h3>
+    <p>Replace this starter with your portfolio, blog, landing page — anything static. HTML, CSS, JS, images, fonts: it all just works.</p>
+  </div>
+</main>
+
+<footer>
+  <p>Hosted free on <a href="https://sites.nctti.tech">NCTTI Sites</a></p>
+</footer>
+<script src="script.js"></script>
+</body>
+</html>
