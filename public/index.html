@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NCTTI Sites — Free subdomain hosting for your projects</title>
+<meta name="description" content="Get a free subdomain, deploy your static site in seconds, and showcase it to the world. Paid plans from ৳29/month.">
+<link rel="stylesheet" href="/assets/css/main.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="logo" href="/"><span class="dot"></span>NCTTI Sites</a>
+    <div class="nav-links">
+      <a href="#showcase">Showcase</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#services">Services</a>
+      <a href="#how">How it works</a>
+    </div>
+    <div class="nav-right" id="nav-auth">
+      <button class="btn btn-ghost btn-sm" data-auth="login">Log in</button>
+      <button class="btn btn-primary btn-sm" data-auth="signup">Get started free</button>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>Ship your project to<br><span class="grad">yourname.sites.nctti.tech</span></h1>
+    <p>Free subdomain hosting for static sites. Upload a zip, go live in seconds, and showcase your work to a community that actually looks.</p>
+    <div class="hero-cta">
+      <button class="btn btn-primary" data-auth="signup">Claim your free subdomain</button>
+      <a class="btn btn-ghost" href="#showcase">Browse showcase</a>
+    </div>
+    <div class="url-demo">https://<b>my-portfolio</b>.sites.nctti.tech</div>
+  </div>
+</header>
+
+<section class="section" id="how">
+  <div class="wrap">
+    <h2>Live in three steps</h2>
+    <p class="sub">No servers to configure. No DNS to fight with.</p>
+    <div class="grid3">
+      <div class="card"><div class="step-num">1</div><h3>Create an account</h3><p>Sign up in 30 seconds and pick your subdomain — first come, first served.</p></div>
+      <div class="card"><div class="step-num">2</div><h3>Upload your zip</h3><p>Drop a zip of your HTML, CSS and JS. We unpack it and put it live instantly.</p></div>
+      <div class="card"><div class="step-num">3</div><h3>Showcase it</h3><p>Publish to the showcase, collect likes, and climb the trending board.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" id="showcase">
+  <div class="wrap">
+    <h2>Community showcase</h2>
+    <p class="sub">Real projects, shipped by real people.</p>
+    <div class="tabs">
+      <button class="tab on" data-sort="trending">Trending</button>
+      <button class="tab" data-sort="new">Newest</button>
+    </div>
+    <div class="show-grid" id="showcase-grid"><div class="empty">Loading projects…</div></div>
+  </div>
+</section>
+
+<section class="section" id="pricing">
+  <div class="wrap">
+    <h2>Simple pricing, starting at ৳29</h2>
+    <p class="sub">Start free. Upgrade when your projects grow.</p>
+    <div class="bill-toggle">
+      <button class="tab on" data-period="monthly">Monthly</button>
+      <button class="tab" data-period="yearly">Yearly <span class="save">2 months free</span></button>
+    </div>
+    <div class="price-grid" id="pricing-grid"></div>
+    <p class="sub" style="margin-top:22px">Pay with bKash, Nagad or Rocket — verified instantly and securely.</p>
+  </div>
+</section>
+
+<section class="section alt" id="services">
+  <div class="wrap">
+    <h2>Need something custom built?</h2>
+    <p class="sub">NCTTI builds it for you — from landing pages to full platforms.</p>
+    <div class="grid3" id="services-grid"></div>
+    <p class="sub" style="margin-top:26px">Tell us about your project on WhatsApp: <a href="https://wa.me/8801308325674" target="_blank" rel="noopener">+880 1308-325674</a></p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div><b style="color:var(--ink)">NCTTI Sites</b> — by NCTTI · Dhaka, Bangladesh<br><span style="font-size:13px">Free subdomain hosting, project showcase & web services.</span></div>
+    <div style="display:flex;gap:18px"><a href="/app">Dashboard</a><a href="https://nctti.tech" target="_blank" rel="noopener">NCTTI</a></div>
+  </div>
+</footer>
+
+<div class="modal-bg" id="auth-modal">
+  <div class="modal">
+    <h3 id="auth-title">Create your account</h3>
+    <p class="sub" id="auth-sub">Free subdomain included. No credit card.</p>
+    <div class="form-err" id="auth-err"></div>
+    <div class="field" id="name-field"><label>Your name</label><input class="input" id="auth-name" placeholder="Ayesha Rahman" autocomplete="name"></div>
+    <div class="field"><label>Email</label><input class="input" id="auth-email" type="email" placeholder="you@example.com" autocomplete="email"></div>
+    <div class="field"><label>Password</label><input class="input" id="auth-pass" type="password" placeholder="At least 8 characters" autocomplete="current-password"></div>
+    <button class="btn btn-primary" id="auth-go" style="width:100%">Create free account</button>
+    <div class="switch" id="auth-switch">Already have an account? <a href="#" id="auth-toggle">Log in</a></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="/assets/js/site.js"></script>
+</body>
+</html>
