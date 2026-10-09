@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#1d4ed8">
 <title>Dashboard — NCTTI Sites</title>
-<link rel="stylesheet" href="/assets/css/dash.css?v=4">
+<link rel="stylesheet" href="/assets/css/dash.css?v=5">
 </head>
 <body>
 
@@ -41,6 +41,9 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>
       </button>
       <div style="flex:1;min-width:0"><h1 id="files-title" style="font-size:19px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></h1><p id="files-sub"></p></div>
+      <button class="icon-btn" id="files-select-btn" aria-label="Select" title="Select">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M21 12v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/></svg>
+      </button>
       <button class="icon-btn" id="files-unzip-btn" aria-label="Upload zip" title="Upload zip">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/><path d="M9 13h6M9 17h6"/></svg>
       </button>
@@ -52,6 +55,10 @@
     </div>
     <div class="crumbs" id="crumbs"></div>
     <div id="files-list"></div>
+    <div class="selbar" id="selbar" style="display:none">
+      <button class="btn btn-ghost" id="sel-cancel" style="flex:1">Cancel</button>
+      <button class="btn btn-danger-soft" id="sel-delete" style="flex:2">Delete</button>
+    </div>
   </section>
 
   <!-- BILLING -->
@@ -183,6 +190,6 @@ window.addEventListener('error', function (e) {
 }, true);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
-<script src="/assets/js/app.js?v=4"></script>
+<script src="/assets/js/app.js?v=5"></script>
 </body>
 </html>
