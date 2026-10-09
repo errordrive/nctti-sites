@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#1d4ed8">
 <title>Dashboard — NCTTI Sites</title>
-<link rel="stylesheet" href="/assets/css/dash.css?v=3">
+<link rel="stylesheet" href="/assets/css/dash.css?v=4">
 </head>
 <body>
 
@@ -41,10 +41,14 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>
       </button>
       <div style="flex:1;min-width:0"><h1 id="files-title" style="font-size:19px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></h1><p id="files-sub"></p></div>
-      <button class="icon-btn" id="files-upload-btn" aria-label="Upload files" style="color:var(--brand);border-color:var(--brand)">
+      <button class="icon-btn" id="files-unzip-btn" aria-label="Upload zip" title="Upload zip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/><path d="M9 13h6M9 17h6"/></svg>
+      </button>
+      <button class="icon-btn" id="files-upload-btn" aria-label="Upload files" title="Upload files" style="color:var(--brand);border-color:var(--brand)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 16V4m0 0L8 8m4-4l4 4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
       </button>
       <input type="file" id="files-input" multiple hidden>
+      <input type="file" id="zip-input2" accept=".zip" hidden>
     </div>
     <div class="crumbs" id="crumbs"></div>
     <div id="files-list"></div>
@@ -130,6 +134,47 @@
   </div>
 </div>
 
+<!-- file action sheet -->
+<div class="sheet-bg" id="sheet-file">
+  <div class="sheet" style="max-width:420px">
+    <div class="grab"></div>
+    <h3 id="fa-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></h3>
+    <p class="sub" id="fa-meta"></p>
+    <p class="mono-sm" id="fa-open-url"></p>
+    <div class="fa-grid">
+      <button class="list-row" id="fa-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg> Open <span class="chev">›</span></button>
+      <button class="list-row" id="fa-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L8 20l-5 1 1-5z"/></svg> Edit <span class="chev">›</span></button>
+      <button class="list-row" id="fa-download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Download <span class="chev">›</span></button>
+      <button class="list-row danger" id="fa-delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0l1 13h10l1-13"/></svg> Delete <span class="chev">›</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- code editor sheet -->
+<div class="sheet-bg" id="sheet-editor">
+  <div class="sheet sheet-full">
+    <div class="ed-head">
+      <button class="icon-btn" id="ed-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <div class="ed-title" id="ed-name"></div>
+      <button class="btn btn-primary btn-sm" id="ed-save">Save</button>
+    </div>
+    <textarea id="ed-area" class="ed-area" spellcheck="false" autocomplete="off"></textarea>
+  </div>
+</div>
+
+<!-- live upload progress sheet -->
+<div class="sheet-bg" id="sheet-uploadlive">
+  <div class="sheet" style="max-width:480px">
+    <div class="grab"></div>
+    <h3>Uploading</h3>
+    <p class="sub">Files are uploading with live progress.</p>
+    <div id="uplive-list"></div>
+    <button class="btn btn-primary btn-block" id="uplive-done" style="display:none;margin-top:14px">Done</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script>
 window.addEventListener('error', function (e) {
@@ -138,6 +183,6 @@ window.addEventListener('error', function (e) {
 }, true);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
-<script src="/assets/js/app.js?v=3"></script>
+<script src="/assets/js/app.js?v=4"></script>
 </body>
 </html>
