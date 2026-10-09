@@ -332,7 +332,7 @@ $("#start-upload").addEventListener("click", async () => {
 });
 
 // ---------- file manager (cPanel-style, premium) ----------
-let FM = { siteId: null, site: null, files: [], dir: "" };
+let FM = { siteId: null, site: null, files: [], dir: "", selecting: false, sel: new Set() };
 const ROOT_LABEL = "public_html";
 
 const MAX_UPLOAD = 32 * 1024 * 1024; // must match worker MAX_FILE_BYTES
@@ -347,8 +347,10 @@ function isEditable(name) {
 }
 
 function openFiles(siteId) {
-  FM = { siteId, site: SITES.find((x) => x.id == siteId), files: [], dir: "" };
+  FM = { siteId, site: SITES.find((x) => x.id == siteId), files: [], dir: "", selecting: false, sel: new Set() };
   $("#files-title").textContent = FM.site.url.replace("https://","");
+  $("#selbar").style.display = "none";
+  $("#files-select-btn").style.color = "";
   loadFmFiles();
   switchView("files");
 }
@@ -407,28 +409,100 @@ function renderFm() {
     return;
   }
   box.innerHTML =
-    dirs.map((d) => `<div class="frow dir" data-dir="${esc(d)}">
+    dirs.map((d) => {
+      const key = "d:" + (FM.dir ? FM.dir + "/" : "") + d;
+      const checked = FM.sel.has(key) ? "checked" : "";
+      return `<div class="frow dir" data-dir="${esc(d)}" data-selkey="${esc(key)}">
+        ${FM.selecting ? `<label class="ckb"><input type="checkbox" data-ck="${esc(key)}" ${checked}><span></span></label>` : ""}
         <div class="fic">${ICONS.folder}</div>
         <div class="fn">${esc(d)}<small>folder</small></div>
-        <div class="fchev">›</div>
-      </div>`).join("") +
+        ${FM.selecting ? "" : '<div class="fchev">›</div>'}
+      </div>`;
+    }).join("") +
     files.map((f) => {
       const full = (FM.dir ? FM.dir + "/" : "") + f.name;
+      const key = "f:" + full;
+      const checked = FM.sel.has(key) ? "checked" : "";
       const isHome = f.name === "index.html" && !FM.dir;
-      return `<div class="frow" data-filerow="${esc(full)}" data-fsize="${f.size}" data-fmime="${esc(f.mime)}">
+      return `<div class="frow" data-filerow="${esc(full)}" data-selkey="${esc(key)}" data-fsize="${f.size}" data-fmime="${esc(f.mime)}">
+        ${FM.selecting ? `<label class="ckb"><input type="checkbox" data-ck="${esc(key)}" ${checked}><span></span></label>` : ""}
         <div class="fic">${fileIcon(f.name)}</div>
         <div class="fn">${esc(f.name)}<small>${fmtSize(f.size)}${isHome ? " · homepage" : ""}</small></div>
-        <div class="fchev">›</div>
+        ${FM.selecting ? "" : '<div class="fchev">›</div>'}
       </div>`;
     }).join("");
-  $$("#files-list [data-dir]").forEach((el) => el.addEventListener("click", () => {
+  $$("#files-list [data-dir]").forEach((el) => el.addEventListener("click", (e) => {
+    if (FM.selecting) { toggleSel(el.dataset.selkey); return; }
     FM.dir = FM.dir ? FM.dir + "/" + el.dataset.dir : el.dataset.dir;
     renderFm();
   }));
   $$("#files-list [data-filerow]").forEach((el) => el.addEventListener("click", () => {
+    if (FM.selecting) { toggleSel(el.dataset.selkey); return; }
     openFileActions(el.dataset.filerow, +el.dataset.fsize, el.dataset.fmime);
   }));
+  $$("#files-list [data-ck]").forEach((cb) => cb.addEventListener("click", (e) => e.stopPropagation()));
+  $$("#files-list [data-ck]").forEach((cb) => cb.addEventListener("change", () => toggleSel(cb.dataset.ck, cb.checked)));
+  updateSelBar();
 }
+
+// ---------- multi-select + bulk delete ----------
+function toggleSel(key, force) {
+  const has = FM.sel.has(key);
+  const want = force !== undefined ? force : !has;
+  if (want) FM.sel.add(key); else FM.sel.delete(key);
+  const cb = document.querySelector(`[data-ck="${CSS.escape(key)}"]`);
+  if (cb) cb.checked = want;
+  const row = cb ? cb.closest(".frow") : null;
+  if (row) row.classList.toggle("sel", want);
+  updateSelBar();
+}
+function updateSelBar() {
+  const n = FM.sel.size;
+  $("#selbar").style.display = FM.selecting ? "flex" : "none";
+  $("#sel-delete").textContent = n ? `Delete (${n})` : "Delete";
+  $("#sel-delete").disabled = !n;
+  $$("#files-list .frow").forEach((r) => r.classList.toggle("sel", FM.sel.has(r.dataset.selkey)));
+}
+$("#files-select-btn").addEventListener("click", () => {
+  FM.selecting = !FM.selecting;
+  FM.sel.clear();
+  $("#files-select-btn").style.color = FM.selecting ? "var(--brand)" : "";
+  renderFm();
+});
+$("#sel-cancel").addEventListener("click", () => {
+  FM.selecting = false; FM.sel.clear();
+  $("#files-select-btn").style.color = "";
+  renderFm();
+});
+$("#sel-delete").addEventListener("click", () => {
+  const files = [...FM.sel].filter((k) => k.startsWith("f:")).map((k) => k.slice(2));
+  const dirs = [...FM.sel].filter((k) => k.startsWith("d:")).map((k) => k.slice(2));
+  const total = files.length + dirs.length;
+  if (!total) return;
+  const desc = [...dirs.map((d) => `[folder] ${d}/`), ...files.map((f) => f)].slice(0, 5).join("\n")
+    + (total > 5 ? `\n…+${total - 5} more` : "");
+  confirmDlg(`Delete ${total} item(s)?`, desc + "\n\nThey will be permanently removed from your site and storage.", "Delete", async () => {
+    $("#sel-delete").disabled = true;
+    $("#sel-delete").textContent = "Deleting…";
+    let okN = 0, failN = 0;
+    for (const p of files) {
+      try {
+        await api(`/api/sites/${FM.siteId}/files`, { method: "DELETE", body: JSON.stringify({ path: "/" + p }) });
+        okN++;
+      } catch { failN++; }
+    }
+    for (const d of dirs) {
+      try {
+        const r = await api(`/api/sites/${FM.siteId}/files`, { method: "DELETE", body: JSON.stringify({ prefix: "/" + d + "/" }) });
+        okN += r.count || 0;
+      } catch { failN++; }
+    }
+    toast(failN ? `Deleted ${okN}, ${failN} failed.` : `Deleted ${okN} item(s).`);
+    FM.selecting = false; FM.sel.clear();
+    $("#files-select-btn").style.color = "";
+    loadFmFiles(); loadSites();
+  });
+});
 
 // ---------- file action sheet ----------
 let FA = { path: "", size: 0, mime: "" };
