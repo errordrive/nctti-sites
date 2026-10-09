@@ -358,6 +358,25 @@ async function apiRouter(req, env, ctx, url) {
     const site = await env.DB.prepare("SELECT * FROM sites WHERE id = ?").bind(+m[1]).first();
     if (!site || site.user_id !== u.id) return err(404, "not_found", "Site not found.");
     const body = await req.json().catch(() => ({}));
+    // folder delete: remove every file under a path prefix
+    if (body.prefix) {
+      const prefix = "/" + String(body.prefix).replace(/^\/+/, "").replace(/\/?$/, "/");
+      if (!isSafePath(prefix + "x")) return err(400, "bad_path", "Unsafe file path.");
+      const like = prefix.replace(/[\\%_]/g, (c) => "\\" + c) + "%";
+      const rows = await env.DB.prepare(
+        "SELECT path, tg_msg_id FROM site_files WHERE site_id = ? AND path LIKE ? ESCAPE '\\'"
+      ).bind(site.id, like).all();
+      const list = rows.results || [];
+      for (const r of list) {
+        if (r.tg_msg_id) await tgDeleteMessage(env, r.tg_msg_id);
+      }
+      await env.DB.prepare(
+        "DELETE FROM site_files WHERE site_id = ? AND path LIKE ? ESCAPE '\\'"
+      ).bind(site.id, like).run();
+      const total = await env.DB.prepare("SELECT COALESCE(SUM(size),0) s FROM site_files WHERE site_id = ?").bind(site.id).first();
+      await env.DB.prepare("UPDATE sites SET storage_bytes = ? WHERE id = ?").bind(total.s || 0, site.id).run();
+      return ok({ deleted_prefix: prefix, count: list.length });
+    }
     const fpath = "/" + String(body.path || "").replace(/^\/+/, "");
     if (!isSafePath(fpath)) return err(400, "bad_path", "Unsafe file path.");
     const row = await env.DB.prepare("SELECT tg_msg_id FROM site_files WHERE site_id = ? AND path = ?").bind(site.id, fpath).first();
