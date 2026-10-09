@@ -318,7 +318,41 @@ async function apiRouter(req, env, ctx, url) {
     await env.DB.prepare(
       "INSERT INTO site_files (site_id, path, file_id, size, mime) VALUES (?,?,?,?,?) ON CONFLICT(site_id, path) DO UPDATE SET file_id=excluded.file_id, size=excluded.size, mime=excluded.mime"
     ).bind(site.id, fpath, fileId, bytes.length, mime).run();
+    // purge edge cache for this file so the new version serves instantly
+    try {
+      await caches.default.delete(new Request(`https://site-cache.internal/${site.id}${fpath}`, { method: "GET" }));
+    } catch {}
     return ok({ path: fpath, size: bytes.length });
+  }
+
+  // File manager: list files
+  if ((m = path.match(/^\/sites\/(\d+)\/files$/)) && method === "GET") {
+    const u = await me();
+    if (!u) return err(401, "auth_required", "Please log in.");
+    const site = await env.DB.prepare("SELECT * FROM sites WHERE id = ?").bind(+m[1]).first();
+    if (!site || site.user_id !== u.id) return err(404, "not_found", "Site not found.");
+    const rows = await env.DB.prepare(
+      "SELECT path, size, mime FROM site_files WHERE site_id = ? ORDER BY path"
+    ).bind(site.id).all();
+    return ok({ files: rows.results || [] });
+  }
+
+  // File manager: delete one file
+  if ((m = path.match(/^\/sites\/(\d+)\/files$/)) && method === "DELETE") {
+    const u = await me();
+    if (!u) return err(401, "auth_required", "Please log in.");
+    const site = await env.DB.prepare("SELECT * FROM sites WHERE id = ?").bind(+m[1]).first();
+    if (!site || site.user_id !== u.id) return err(404, "not_found", "Site not found.");
+    const body = await req.json().catch(() => ({}));
+    const fpath = "/" + String(body.path || "").replace(/^\/+/, "");
+    if (!isSafePath(fpath)) return err(400, "bad_path", "Unsafe file path.");
+    await env.DB.prepare("DELETE FROM site_files WHERE site_id = ? AND path = ?").bind(site.id, fpath).run();
+    try {
+      await caches.default.delete(new Request(`https://site-cache.internal/${site.id}${fpath}`, { method: "GET" }));
+    } catch {}
+    const total = await env.DB.prepare("SELECT COALESCE(SUM(size),0) s FROM site_files WHERE site_id = ?").bind(site.id).first();
+    await env.DB.prepare("UPDATE sites SET storage_bytes = ? WHERE id = ?").bind(total.s || 0, site.id).run();
+    return ok({ deleted: fpath });
   }
 
   if ((m = path.match(/^\/sites\/(\d+)\/deploy-complete$/)) && method === "POST") {
