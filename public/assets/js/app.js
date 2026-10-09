@@ -16,6 +16,8 @@ const ICONS = {
   folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/></svg>',
   img: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 18l5-5 3 3 4-4 4 4"/></svg>',
+  zip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/><path d="M9 13h6M9 17h6"/></svg>',
+  code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg>',
 };
 
 function toast(msg) {
@@ -300,6 +302,8 @@ $("#start-upload").addEventListener("click", async () => {
     if (!files.some(([n]) => n.toLowerCase() === "index.html"))
       throw new Error("index.html not found — it must be the entry page.");
     const free = ME.tier === "free";
+    const big = files.find(([n, d]) => d.length > MAX_UPLOAD);
+    if (big) throw new Error(`"${big[0]}" exceeds 32 MB — upload it separately via Files.`);
     let done = 0;
     list.innerHTML = "";
     for (const [name, data] of files) {
@@ -327,8 +331,20 @@ $("#start-upload").addEventListener("click", async () => {
   finally { btn.disabled = false; }
 });
 
-// ---------- file manager (cPanel-style) ----------
+// ---------- file manager (cPanel-style, premium) ----------
 let FM = { siteId: null, site: null, files: [], dir: "" };
+const ROOT_LABEL = "public_html";
+
+const MAX_UPLOAD = 32 * 1024 * 1024; // must match worker MAX_FILE_BYTES
+function fmtSize(b) {
+  b = +b || 0;
+  if (b < 1024) return b + " B";
+  if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
+  return (b / 1048576).toFixed(1) + " MB";
+}
+function isEditable(name) {
+  return /\.(html?|css|js|mjs|json|txt|md|xml|svg|yml|yaml|toml|ini|conf|htaccess)$/i.test(name);
+}
 
 function openFiles(siteId) {
   FM = { siteId, site: SITES.find((x) => x.id == siteId), files: [], dir: "" };
@@ -349,7 +365,6 @@ async function loadFmFiles() {
 }
 
 function fmEntries() {
-  // build folder listing for FM.dir from flat file list
   const prefix = FM.dir ? FM.dir + "/" : "";
   const dirs = new Set(), files = [];
   for (const f of FM.files) {
@@ -365,89 +380,207 @@ function fmEntries() {
 }
 
 function fileIcon(name) {
-  if (/\.(png|jpe?g|gif|webp|svg|ico)$/i.test(name)) return ICONS.img;
+  if (/\.(png|jpe?g|gif|webp|ico)$/i.test(name)) return ICONS.img;
+  if (/\.svg$/i.test(name)) return ICONS.img;
+  if (/\.(zip|tar|gz|rar|7z)$/i.test(name)) return ICONS.zip;
+  if (isEditable(name)) return ICONS.code;
   return ICONS.file;
 }
 
 function renderFm() {
   const { dirs, files } = fmEntries();
-  // breadcrumbs
+  // breadcrumbs: public_html as root (like cPanel)
   const parts = FM.dir ? FM.dir.split("/") : [];
-  let crumbs = `<button data-crumb="" class="${!FM.dir ? "on" : ""}">/</button>`;
+  let crumbs = `<button data-crumb="" class="${!FM.dir ? "on" : ""}">${ROOT_LABEL}</button>`;
   let acc = "";
   parts.forEach((p, i) => {
     acc += (acc ? "/" : "") + p;
-    crumbs += `<button data-crumb="${esc(acc)}" class="${i === parts.length - 1 ? "on" : ""}">${esc(p)}</button>`;
+    crumbs += `<span class="csep">/</span><button data-crumb="${esc(acc)}" class="${i === parts.length - 1 ? "on" : ""}">${esc(p)}</button>`;
   });
   $("#crumbs").innerHTML = crumbs;
   $$("#crumbs [data-crumb]").forEach((b) => b.addEventListener("click", () => { FM.dir = b.dataset.crumb; renderFm(); }));
-  $("#files-sub").textContent = `${FM.files.length} files · tap a file to open its URL`;
+  $("#files-sub").textContent = `${FM.files.length} files · tap for actions`;
 
   const box = $("#files-list");
   if (!dirs.length && !files.length) {
-    box.innerHTML = `<div class="empty">${ICONS.folder}<b>Empty folder</b>Upload files with the + button above.</div>`;
+    box.innerHTML = `<div class="empty">${ICONS.folder}<b>Empty folder</b>Use the buttons above to upload files or a zip.<br><span style="font-size:12.5px">Built a React/Vue app? Upload its <code>dist</code> folder as a zip.</span></div>`;
     return;
   }
   box.innerHTML =
     dirs.map((d) => `<div class="frow dir" data-dir="${esc(d)}">
         <div class="fic">${ICONS.folder}</div>
         <div class="fn">${esc(d)}<small>folder</small></div>
+        <div class="fchev">›</div>
       </div>`).join("") +
     files.map((f) => {
       const full = (FM.dir ? FM.dir + "/" : "") + f.name;
-      const url = `${FM.site.url}/${full}`;
-      return `<div class="frow" data-file="${esc(full)}">
+      const isHome = f.name === "index.html" && !FM.dir;
+      return `<div class="frow" data-filerow="${esc(full)}" data-fsize="${f.size}" data-fmime="${esc(f.mime)}">
         <div class="fic">${fileIcon(f.name)}</div>
-        <div class="fn">${esc(f.name)}<small>${fmtMB(f.size)}${f.name === "index.html" && !FM.dir ? " · homepage" : ""}</small></div>
-        <button class="fopen" data-openfile="${esc(url)}">Open</button>
-        <button class="fdel" data-delfile="${esc(full)}" aria-label="Delete">${ICONS.trash}</button>
+        <div class="fn">${esc(f.name)}<small>${fmtSize(f.size)}${isHome ? " · homepage" : ""}</small></div>
+        <div class="fchev">›</div>
       </div>`;
     }).join("");
   $$("#files-list [data-dir]").forEach((el) => el.addEventListener("click", () => {
     FM.dir = FM.dir ? FM.dir + "/" + el.dataset.dir : el.dataset.dir;
     renderFm();
   }));
-  $$("#files-list [data-openfile]").forEach((b) => b.addEventListener("click", (e) => {
-    e.stopPropagation(); window.open(b.dataset.openfile, "_blank", "noopener");
-  }));
-  $$("#files-list [data-delfile]").forEach((b) => b.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const p = b.dataset.delfile;
-    confirmDlg("Delete file?", "/" + p + " will be removed from your site.", "Delete", async () => {
-      try {
-        await api(`/api/sites/${FM.siteId}/files`, { method: "DELETE", body: JSON.stringify({ path: "/" + p }) });
-        toast("File deleted.");
-        loadFmFiles(); loadSites();
-      } catch (err) { toast(err.message); }
-    });
+  $$("#files-list [data-filerow]").forEach((el) => el.addEventListener("click", () => {
+    openFileActions(el.dataset.filerow, +el.dataset.fsize, el.dataset.fmime);
   }));
 }
 
-// upload into current folder
+// ---------- file action sheet ----------
+let FA = { path: "", size: 0, mime: "" };
+function openFileActions(path, size, mime) {
+  FA = { path, size, mime };
+  const name = path.split("/").pop();
+  $("#fa-name").textContent = name;
+  $("#fa-meta").textContent = `${fmtSize(size)} · /${path}`;
+  $("#fa-edit").style.display = isEditable(name) ? "" : "none";
+  $("#fa-open-url").textContent = `${FM.site.url}/${path}`;
+  openSheet("#sheet-file");
+}
+function faUrl(dl) { return `${FM.site.url}/${FA.path}${dl ? "?download=1" : ""}`; }
+$("#fa-open").addEventListener("click", () => { closeAllSheets(); window.open(faUrl(false), "_blank", "noopener"); });
+$("#fa-download").addEventListener("click", () => { closeAllSheets(); window.open(faUrl(true), "_blank", "noopener"); });
+$("#fa-edit").addEventListener("click", () => { closeAllSheets(); openEditor(FA.path); });
+$("#fa-delete").addEventListener("click", () => {
+  closeAllSheets();
+  confirmDlg("Delete file?", `/${FA.path} will be permanently removed from your site and storage.`, "Delete", async () => {
+    try {
+      await api(`/api/sites/${FM.siteId}/files`, { method: "DELETE", body: JSON.stringify({ path: "/" + FA.path }) });
+      toast("File deleted.");
+      loadFmFiles(); loadSites();
+    } catch (e) { toast(e.message); }
+  });
+});
+
+// ---------- editor ----------
+let ED = { path: "", dirty: false };
+async function openEditor(path) {
+  ED = { path, dirty: false };
+  $("#ed-name").textContent = path.split("/").pop();
+  $("#ed-area").value = "Loading…";
+  $("#ed-area").disabled = true;
+  $("#ed-save").disabled = true;
+  openSheet("#sheet-editor");
+  try {
+    const d = await api(`/api/sites/${FM.siteId}/file-content?path=${encodeURIComponent("/" + path)}`);
+    $("#ed-area").value = d.content;
+    $("#ed-area").disabled = false;
+    $("#ed-save").disabled = false;
+  } catch (e) {
+    $("#ed-area").value = "Couldn't load file: " + e.message;
+  }
+}
+$("#ed-area").addEventListener("input", () => { ED.dirty = true; });
+$("#ed-save").addEventListener("click", async () => {
+  const btn = $("#ed-save");
+  btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    await api(`/api/sites/${FM.siteId}/files`, {
+      method: "PUT",
+      body: JSON.stringify({ path: "/" + ED.path, content: $("#ed-area").value }),
+    });
+    toast("Saved.");
+    closeAllSheets(); loadFmFiles(); loadSites();
+  } catch (e) { toast(e.message); }
+  finally { btn.disabled = false; btn.textContent = "Save"; }
+});
+$("#ed-close").addEventListener("click", () => {
+  if (ED.dirty && !confirm("Discard unsaved changes?")) return;
+  closeAllSheets();
+});
+
+// ---------- upload with real-time progress (XHR) ----------
+function xhrUpload(name, bytes, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", `/api/sites/${FM.siteId}/files`);
+    x.setRequestHeader("X-Filename", name);
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    x.onload = () => {
+      try {
+        const d = JSON.parse(x.responseText);
+        d.ok ? resolve(d) : reject(new Error(d.message || "Upload failed"));
+      } catch { reject(new Error("Upload failed")); }
+    };
+    x.onerror = () => reject(new Error("Network error"));
+    x.send(bytes);
+  });
+}
+
+function maybeBadge(name, bytes) {
+  if (ME.tier === "free" && name.toLowerCase() === "index.html" && !name.includes("/")) {
+    try { return injectBadge(new TextDecoder().decode(bytes)); } catch { /* keep */ }
+  }
+  return bytes;
+}
+
+async function uploadQueue(items) {
+  // items: [{name, bytes}]
+  const box = $("#uplive-list");
+  box.innerHTML = "";
+  $("#sheet-uploadlive").classList.add("show");
+  let okN = 0;
+  for (const it of items) {
+    const row = document.createElement("div");
+    row.className = "uplive-row";
+    row.innerHTML = `<div class="uplive-top"><span class="n">${esc(it.name.split("/").pop())}</span><span class="pc">0%</span></div><div class="uplive-bar"><i></i></div>`;
+    box.appendChild(row);
+    const bar = row.querySelector("i"), pc = row.querySelector(".pc");
+    try {
+      await xhrUpload(it.name, maybeBadge(it.name, it.bytes), (p) => {
+        bar.style.width = Math.round(p * 100) + "%";
+        pc.textContent = Math.round(p * 100) + "%";
+      });
+      bar.style.width = "100%"; pc.textContent = "done"; pc.classList.add("ok");
+      okN++;
+    } catch (e) {
+      pc.textContent = it.bytes.length > MAX_UPLOAD ? "too large (32MB max)" : "failed"; pc.classList.add("bad");
+    }
+  }
+  $("#uplive-done").style.display = "";
+  $("#uplive-done").onclick = () => { closeAllSheets(); loadFmFiles(); loadSites(); };
+  if (okN) toast(`Uploaded ${okN} file(s).`);
+}
+
 $("#files-upload-btn").addEventListener("click", () => $("#files-input").click());
 $("#files-input").addEventListener("change", async (e) => {
   const picked = [...e.target.files];
   e.target.value = "";
   if (!picked.length) return;
-  toast(`Uploading ${picked.length} file(s)…`);
-  let okN = 0;
+  const items = [];
   for (const f of picked) {
-    const name = (FM.dir ? FM.dir + "/" : "") + f.name;
-    try {
-      let bytes = new Uint8Array(await f.arrayBuffer());
-      if (ME.tier === "free" && name.toLowerCase() === "index.html" && !FM.dir) {
-        try { bytes = injectBadge(new TextDecoder().decode(bytes)); } catch {}
-      }
-      const r = await fetch(`/api/sites/${FM.siteId}/files`, {
-        method: "POST", headers: { "X-Filename": name }, body: bytes });
-      const d = await r.json().catch(() => ({}));
-      if (d.ok) okN++;
-      else toast(d.message || `Failed: ${f.name}`);
-    } catch { toast(`Failed: ${f.name}`); }
+    items.push({ name: (FM.dir ? FM.dir + "/" : "") + f.name, bytes: new Uint8Array(await f.arrayBuffer()) });
   }
-  if (okN) { toast(`Uploaded ${okN} file(s).`); loadFmFiles(); loadSites(); }
+  uploadQueue(items);
 });
 
+// ---------- unzip into current folder ----------
+$("#files-unzip-btn").addEventListener("click", () => $("#zip-input2").click());
+$("#zip-input2").addEventListener("change", async (e) => {
+  const zf = e.target.files[0];
+  e.target.value = "";
+  if (!zf) return;
+  try {
+    const buf = new Uint8Array(await zf.arrayBuffer());
+    let entries;
+    try { entries = fflate.unzipSync(buf); } catch { toast("Invalid zip file."); return; }
+    let files = Object.entries(entries).filter(([n]) => !n.endsWith("/") && zipSafe(n));
+    const tops = new Set(files.map(([n]) => n.split("/")[0]));
+    if (tops.size === 1) {
+      const top = [...tops][0];
+      if (files.every(([n]) => n === top || n.startsWith(top + "/")))
+        files = files.map(([n, d]) => [n.slice(top.length + 1), d]).filter(([n]) => n && zipSafe(n));
+    }
+    if (!files.length) { toast("Zip is empty."); return; }
+    const items = files.map(([n, d]) => ({ name: (FM.dir ? FM.dir + "/" : "") + n, bytes: d }));
+    toast(`Extracting ${items.length} files…`);
+    uploadQueue(items);
+  } catch (err) { toast("Couldn't read zip."); }
+});
 // ---------- billing ----------
 let billPeriod = "monthly";
 async function renderBilling() {
