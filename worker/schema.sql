@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS site_files (
   site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
   path TEXT NOT NULL,
   file_id TEXT NOT NULL,
+  tg_msg_id INTEGER,
   size INTEGER NOT NULL,
   mime TEXT NOT NULL,
   PRIMARY KEY (site_id, path)
