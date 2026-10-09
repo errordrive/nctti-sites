@@ -154,8 +154,8 @@ function validateSubdomain(sub) {
 }
 const isSafePath = (p) =>
   typeof p === "string" && p.length > 0 && p.length <= 200 &&
-  p.startsWith("/") && !p.includes("..") && !p.includes("\\") &&
-  !/\/\./.test(p) && !p.includes("__MACOSX");
+  p.startsWith("/") && !p.includes("\\") && !p.includes("__MACOSX") &&
+  p.split("/").every((seg, i) => i === 0 ? seg === "" : seg !== "" && seg !== "." && seg !== "..");
 
 async function apiRouter(req, env, ctx, url) {
   const base = env.BASE_DOMAIN || "sites.nctti.tech";
