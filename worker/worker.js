@@ -13,7 +13,8 @@
  * - Passwords: PBKDF2-HMAC-SHA256 x20k via WebCrypto (native, ~ms).
  * - Zip handling happens CLIENT-SIDE (browser unzips with fflate); the worker
  *   only proxies file bytes to Telegram. No heavy CPU here.
- * - Served site files go through caches.default, so hot files cost ~0 CPU.
+ * - Served site files stream DIRECTLY from Telegram every request (no edge
+ *   cache, by design: zero stored state on Cloudflare).
  */
 
 const TIERS = {
@@ -24,7 +25,7 @@ const TIERS = {
 };
 const TIER_ORDER = ["free", "starter", "pro", "business"];
 const RESERVED = new Set(["www","api","admin","mail","ftp","cpanel","webmail","ns1","ns2","app","dashboard","billing","support","status","blog","docs","help","root","test","demo","staging","static","assets","cdn","sites","login","signup","auth","oauth","account","settings","pricing","services","showcase","about","contact","terms","privacy","abuse"]);
-const MAX_FILE_BYTES = 8 * 1024 * 1024; // per-file cap for Telegram sendDocument
+const MAX_FILE_BYTES = 32 * 1024 * 1024; // per-file cap (Telegram allows 50MB; worker memory safe at 32MB)
 
 const MIME = { html:"text/html; charset=utf-8", htm:"text/html; charset=utf-8", css:"text/css; charset=utf-8",
   js:"text/javascript; charset=utf-8", mjs:"text/javascript; charset=utf-8", json:"application/json",
@@ -90,7 +91,16 @@ async function tgSendDocument(env, filename, bytes, mime, caption) {
   const r = await fetch(tgApi(env, "sendDocument"), { method: "POST", body: fd });
   const d = await r.json();
   if (!d.ok) throw new Error("telegram_upload_failed: " + (d.description || r.status));
-  return d.result.document.file_id;
+  return { file_id: d.result.document.file_id, message_id: d.result.message_id || null };
+}
+async function tgDeleteMessage(env, messageId) {
+  if (!messageId) return;
+  try {
+    await fetch(tgApi(env, "deleteMessage"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: env.TG_CHANNEL_ID, message_id: messageId }),
+    });
+  } catch { /* orphan TG file is harmless */ }
 }
 async function tgDownloadUrl(env, fileId) {
   const r = await fetch(tgApi(env, "getFile"), {
@@ -98,7 +108,11 @@ async function tgDownloadUrl(env, fileId) {
     body: JSON.stringify({ file_id: fileId }),
   });
   const d = await r.json();
-  if (!d.ok) throw new Error("telegram_getfile_failed");
+  if (!d.ok) {
+    // file deleted from Telegram -> signal so caller can clean D1 immediately
+    const gone = /not found|bad request/i.test(d.description || "");
+    throw new Error(gone ? "TG_GONE" : "telegram_getfile_failed");
+  }
   return tgFile(env, d.result.file_path);
 }
 
@@ -302,7 +316,7 @@ async function apiRouter(req, env, ctx, url) {
     if (!isSafePath(fpath)) return err(400, "bad_path", "Unsafe file path.");
     const bytes = new Uint8Array(await req.arrayBuffer());
     if (!bytes.length) return err(400, "empty_file", "Empty file.");
-    if (bytes.length > MAX_FILE_BYTES) return err(400, "too_large", "File exceeds 8 MB.");
+    if (bytes.length > MAX_FILE_BYTES) return err(400, "too_large", "File exceeds 32 MB.");
     const lim = TIERS[tierOf(await activeSub(env, u.id))];
     const totalRow = await env.DB.prepare(
       "SELECT COALESCE(SUM(size),0) AS s FROM site_files WHERE site_id IN (SELECT id FROM sites WHERE user_id = ?)"
@@ -310,19 +324,18 @@ async function apiRouter(req, env, ctx, url) {
     if ((totalRow.s || 0) + bytes.length > lim.storage_mb * 1024 * 1024)
       return err(403, "quota", `Storage limit reached (${lim.storage_mb} MB on your plan).`);
     const mime = mimeFor(fpath);
-    let fileId;
+    let tg;
     try {
-      fileId = await tgSendDocument(env, fpath.split("/").pop() || "file", bytes, mime, `${site.subdomain}:${fpath}`);
+      tg = await tgSendDocument(env, fpath.split("/").pop() || "file", bytes, mime, `${site.subdomain}:${fpath}`);
     } catch (e) {
       return err(502, "upload_failed", "Could not store file. Try again.");
     }
+    // if replacing, remove the old Telegram message so storage doesn't leak
+    const old = await env.DB.prepare("SELECT tg_msg_id FROM site_files WHERE site_id = ? AND path = ?").bind(site.id, fpath).first();
+    if (old && old.tg_msg_id) await tgDeleteMessage(env, old.tg_msg_id);
     await env.DB.prepare(
-      "INSERT INTO site_files (site_id, path, file_id, size, mime) VALUES (?,?,?,?,?) ON CONFLICT(site_id, path) DO UPDATE SET file_id=excluded.file_id, size=excluded.size, mime=excluded.mime"
-    ).bind(site.id, fpath, fileId, bytes.length, mime).run();
-    // purge edge cache for this file so the new version serves instantly
-    try {
-      await caches.default.delete(new Request(`https://site-cache.internal/${site.id}${fpath}`, { method: "GET" }));
-    } catch {}
+      "INSERT INTO site_files (site_id, path, file_id, tg_msg_id, size, mime) VALUES (?,?,?,?,?,?) ON CONFLICT(site_id, path) DO UPDATE SET file_id=excluded.file_id, tg_msg_id=excluded.tg_msg_id, size=excluded.size, mime=excluded.mime"
+    ).bind(site.id, fpath, tg.file_id, tg.message_id, bytes.length, mime).run();
     return ok({ path: fpath, size: bytes.length });
   }
 
@@ -347,13 +360,70 @@ async function apiRouter(req, env, ctx, url) {
     const body = await req.json().catch(() => ({}));
     const fpath = "/" + String(body.path || "").replace(/^\/+/, "");
     if (!isSafePath(fpath)) return err(400, "bad_path", "Unsafe file path.");
+    const row = await env.DB.prepare("SELECT tg_msg_id FROM site_files WHERE site_id = ? AND path = ?").bind(site.id, fpath).first();
     await env.DB.prepare("DELETE FROM site_files WHERE site_id = ? AND path = ?").bind(site.id, fpath).run();
-    try {
-      await caches.default.delete(new Request(`https://site-cache.internal/${site.id}${fpath}`, { method: "GET" }));
-    } catch {}
+    // also delete from Telegram so storage doesn't leak
+    if (row && row.tg_msg_id) await tgDeleteMessage(env, row.tg_msg_id);
     const total = await env.DB.prepare("SELECT COALESCE(SUM(size),0) s FROM site_files WHERE site_id = ?").bind(site.id).first();
     await env.DB.prepare("UPDATE sites SET storage_bytes = ? WHERE id = ?").bind(total.s || 0, site.id).run();
     return ok({ deleted: fpath });
+  }
+
+  // File manager: read raw content (for view/edit), text files only
+  if ((m = path.match(/^\/sites\/(\d+)\/file-content$/)) && method === "GET") {
+    const u = await me();
+    if (!u) return err(401, "auth_required", "Please log in.");
+    const site = await env.DB.prepare("SELECT * FROM sites WHERE id = ?").bind(+m[1]).first();
+    if (!site || site.user_id !== u.id) return err(404, "not_found", "Site not found.");
+    const qp = new URL(req.url).searchParams.get("path") || "";
+    const fpath = "/" + qp.replace(/^\/+/, "");
+    if (!isSafePath(fpath)) return err(400, "bad_path", "Unsafe file path.");
+    const f = await env.DB.prepare("SELECT * FROM site_files WHERE site_id = ? AND path = ?").bind(site.id, fpath).first();
+    if (!f) return err(404, "not_found", "File not found.");
+    if (f.size > 512 * 1024) return err(400, "too_large", "File too large to edit here.");
+    let dl;
+    try { dl = await tgDownloadUrl(env, f.file_id); }
+    catch (e) {
+      if (e.message === "TG_GONE") {
+        await env.DB.prepare("DELETE FROM site_files WHERE site_id = ? AND path = ?").bind(site.id, fpath).run();
+        return err(404, "gone", "File was deleted from storage.");
+      }
+      return err(502, "storage_error", "Could not read file.");
+    }
+    const up = await fetch(dl);
+    if (!up.ok) return err(502, "storage_error", "Could not read file.");
+    const text = await up.text();
+    return ok({ path: fpath, mime: f.mime, size: f.size, content: text });
+  }
+
+  // File manager: edit (replace content of a text file)
+  if ((m = path.match(/^\/sites\/(\d+)\/files$/)) && method === "PUT") {
+    const u = await me();
+    if (!u) return err(401, "auth_required", "Please log in.");
+    const site = await env.DB.prepare("SELECT * FROM sites WHERE id = ?").bind(+m[1]).first();
+    if (!site || site.user_id !== u.id) return err(404, "not_found", "Site not found.");
+    if (site.suspended) return err(403, "suspended", "This site is suspended.");
+    const body = await req.json().catch(() => ({}));
+    const fpath = "/" + String(body.path || "").replace(/^\/+/, "");
+    const content = String(body.content ?? "");
+    if (!isSafePath(fpath)) return err(400, "bad_path", "Unsafe file path.");
+    if (content.length > MAX_FILE_BYTES) return err(400, "too_large", "File exceeds 32 MB.");
+    const old = await env.DB.prepare("SELECT * FROM site_files WHERE site_id = ? AND path = ?").bind(site.id, fpath).first();
+    if (!old) return err(404, "not_found", "File not found.");
+    const bytes = new TextEncoder().encode(content);
+    let tg;
+    try {
+      tg = await tgSendDocument(env, fpath.split("/").pop() || "file", bytes, old.mime, `${site.subdomain}:${fpath}`);
+    } catch (e) {
+      return err(502, "upload_failed", "Could not save file. Try again.");
+    }
+    if (old.tg_msg_id) await tgDeleteMessage(env, old.tg_msg_id);
+    await env.DB.prepare(
+      "UPDATE site_files SET file_id = ?, tg_msg_id = ?, size = ? WHERE site_id = ? AND path = ?"
+    ).bind(tg.file_id, tg.message_id, bytes.length, site.id, fpath).run();
+    const total = await env.DB.prepare("SELECT COALESCE(SUM(size),0) s FROM site_files WHERE site_id = ?").bind(site.id).first();
+    await env.DB.prepare("UPDATE sites SET storage_bytes = ? WHERE id = ?").bind(total.s || 0, site.id).run();
+    return ok({ path: fpath, size: bytes.length });
   }
 
   if ((m = path.match(/^\/sites\/(\d+)\/deploy-complete$/)) && method === "POST") {
@@ -365,7 +435,6 @@ async function apiRouter(req, env, ctx, url) {
     if (!hasIndex) return err(400, "empty_site", "index.html not found in upload.");
     const total = await env.DB.prepare("SELECT COALESCE(SUM(size),0) s, COUNT(*) c FROM site_files WHERE site_id = ?").bind(site.id).first();
     await env.DB.prepare("UPDATE sites SET storage_bytes = ? WHERE id = ?").bind(total.s, site.id).run();
-    // bust cache for this site's files
     return ok({ files: total.c, bytes: total.s, url: `https://${site.subdomain}.nctti.tech` });
   }
 
@@ -470,7 +539,7 @@ async function apiRouter(req, env, ctx, url) {
   return err(404, "not_found", "Not found.");
 }
 
-// ---------- user site serving (Telegram storage + edge cache) ----------
+// ---------- user site serving (Telegram storage, direct every request) ----------
 async function serveSite(req, env, ctx, sub, pathname) {
   if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(sub)) return new Response("Not found", { status: 404 });
   const site = await env.DB.prepare("SELECT * FROM sites WHERE subdomain = ? AND suspended = 0").bind(sub).first();
@@ -482,25 +551,27 @@ async function serveSite(req, env, ctx, sub, pathname) {
   if (p === "/") p = "/index.html";
   if (p.endsWith("/")) p += "index.html";
 
-  const cache = caches.default;
-  const cacheKey = new Request(`https://site-cache.internal/${site.id}${p}`, { method: "GET" });
-  let res = await cache.match(cacheKey);
-  if (!res) {
-    const f = await env.DB.prepare("SELECT * FROM site_files WHERE site_id = ? AND path = ?").bind(site.id, p).first();
-    if (!f) return new Response("Not found", { status: 404 });
-    let dl;
-    try { dl = await tgDownloadUrl(env, f.file_id); }
-    catch { return new Response("Storage error", { status: 502 }); }
-    const up = await fetch(dl);
-    if (!up.ok) return new Response("Storage error", { status: 502 });
-    res = new Response(up.body, { headers: {
-      "Content-Type": f.mime,
-      "Cache-Control": "public, max-age=31536000",
-      "X-Content-Type-Options": "nosniff",
-    }});
-    ctx.waitUntil(cache.put(cacheKey, res.clone()));
+  const f = await env.DB.prepare("SELECT * FROM site_files WHERE site_id = ? AND path = ?").bind(site.id, p).first();
+  if (!f) return new Response("Not found", { status: 404 });
+  let dl;
+  try { dl = await tgDownloadUrl(env, f.file_id); }
+  catch (e) {
+    // immediate action: file was deleted from Telegram -> drop the stale D1 row
+    if (e.message === "TG_GONE") {
+      ctx.waitUntil(env.DB.prepare("DELETE FROM site_files WHERE site_id = ? AND path = ?").bind(site.id, p).run());
+      return new Response("Not found", { status: 404 });
+    }
+    return new Response("Storage error", { status: 502 });
   }
-  return res;
+  const up = await fetch(dl);
+  if (!up.ok) return new Response("Storage error", { status: 502 });
+  const dl2 = up.headers.get("content-length");
+  return new Response(up.body, { headers: {
+    "Content-Type": f.mime,
+    "Content-Length": dl2 || String(f.size),
+    "X-Content-Type-Options": "nosniff",
+    ...(req.url.includes("download=1") ? { "Content-Disposition": `attachment; filename="${p.split("/").pop()}"` } : {}),
+  }});
 }
 
 // ---------- entry ----------
