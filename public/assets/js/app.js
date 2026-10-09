@@ -13,6 +13,9 @@ const ICONS = {
   heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20.5C7 16.5 3 13 3 8.8 3 6 5.2 4 7.8 4c1.7 0 3.2.9 4.2 2.3C13 5 14.5 4 16.2 4 18.8 4 21 6 21 8.8c0 4.2-4 7.7-9 11.7z"/></svg>',
   out: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 5H5v14h4m6-9l4 4-4 4m-4-4h7"/></svg>',
   rocket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c3 2 5 6 5 10l3 3-4 1c-1 2-2.5 3.5-4 4-1.5-.5-3-2-4-4l-4-1 3-3c0-4 2-8 5-10z"/><circle cx="12" cy="9" r="1.6"/></svg>',
+  folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/></svg>',
+  img: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 18l5-5 3 3 4-4 4 4"/></svg>',
 };
 
 function toast(msg) {
@@ -55,6 +58,8 @@ function switchView(name) {
   closeAllSheets();
   if (name === "sites") loadSites();
   if (name === "billing") renderBilling();
+  // files view is opened via openFiles(), not tabs
+  $("#fab").style.display = name === "files" ? "none" : "";
 }
 $$("#tabbar button, #segtabs button").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
 
@@ -135,11 +140,12 @@ async function loadSites() {
         </div>
         <div class="meter"><i style="width:${pct.toFixed(1)}%"></i></div>
         <div class="site-actions">
-          <button class="btn btn-primary btn-sm" data-upload="${s.id}">${ICONS.upload} Deploy</button>
+          <button class="btn btn-primary btn-sm" data-files="${s.id}">${ICONS.folder} Files</button>
           <button class="btn btn-ghost btn-sm" data-open="${s.url}">${ICONS.globe} Visit</button>
           <div class="kebab">
             <button class="btn btn-ghost btn-sm" data-kebab="${s.id}" aria-label="More">${ICONS.dots}</button>
             <div class="kebab-menu" id="menu-${s.id}">
+              <button data-upload="${s.id}">${ICONS.upload} Deploy zip</button>
               <button data-edit="${s.id}">${ICONS.edit} Edit details</button>
               <button data-del="${s.id}" class="danger">${ICONS.trash} Delete site</button>
             </div>
@@ -156,6 +162,7 @@ async function loadSites() {
 }
 
 function bindSiteActions() {
+  $$("[data-files]").forEach((b) => b.addEventListener("click", () => openFiles(b.dataset.files)));
   $$("[data-upload]").forEach((b) => b.addEventListener("click", () => openUpload(b.dataset.upload)));
   $$("[data-open]").forEach((b) => b.addEventListener("click", () => window.open(b.dataset.open, "_blank", "noopener")));
   $$("[data-kebab]").forEach((b) => b.addEventListener("click", (e) => {
@@ -199,16 +206,42 @@ $("#fab").addEventListener("click", () => { $("#site-err").classList.remove("sho
 $("#create-site").addEventListener("click", async () => {
   const btn = $("#create-site"), errBox = $("#site-err");
   errBox.classList.remove("show"); btn.disabled = true;
+  btn.textContent = "Creating…";
   try {
-    await api("/api/sites", { method: "POST", body: JSON.stringify({
+    const d = await api("/api/sites", { method: "POST", body: JSON.stringify({
       subdomain: $("#new-sub").value.trim(), title: $("#new-title").value.trim() }) });
+    btn.textContent = "Loading starter site…";
+    try {
+      await deployStarter(d.site);
+      toast("Your site is live!");
+    } catch (e) {
+      toast("Site created — starter page appears once file storage connects.");
+    }
     closeAllSheets();
     $("#new-sub").value = ""; $("#new-title").value = "";
-    toast("Site created — deploy your files!");
-    loadSites();
+    await loadSites();
+    openFiles(d.site.id);
   } catch (e) { errBox.textContent = e.message; errBox.classList.add("show"); }
-  finally { btn.disabled = false; }
+  finally { btn.disabled = false; btn.textContent = "Create site"; }
 });
+
+// Deploy the default starter website so users instantly see the file -> URL model.
+const STARTER_FILES = ["index.html", "about.html", "styles.css", "script.js"];
+async function deployStarter(site) {
+  for (const name of STARTER_FILES) {
+    let text = await (await fetch(`/templates/starter/${name}?v=2`)).text();
+    text = text.split("{{SUBDOMAIN}}").join(site.subdomain);
+    let bytes = new TextEncoder().encode(text);
+    if (ME.tier === "free" && name === "index.html") {
+      try { bytes = injectBadge(new TextDecoder().decode(bytes)); } catch {}
+    }
+    const r = await fetch(`/api/sites/${site.id}/files`, {
+      method: "POST", headers: { "X-Filename": name }, body: bytes });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) throw new Error(d.message || `Starter deploy failed at ${name}`);
+  }
+  await api(`/api/sites/${site.id}/deploy-complete`, { method: "POST" });
+}
 
 // ---------- upload sheet ----------
 let uploadSiteId = null, zipFile = null;
@@ -292,6 +325,127 @@ $("#start-upload").addEventListener("click", async () => {
     closeAllSheets(); loadSites();
   } catch (e) { errBox.textContent = e.message; errBox.classList.add("show"); }
   finally { btn.disabled = false; }
+});
+
+// ---------- file manager (cPanel-style) ----------
+let FM = { siteId: null, site: null, files: [], dir: "" };
+
+function openFiles(siteId) {
+  FM = { siteId, site: SITES.find((x) => x.id == siteId), files: [], dir: "" };
+  $("#files-title").textContent = FM.site.subdomain + "." + BASE;
+  loadFmFiles();
+  switchView("files");
+}
+$("#files-back").addEventListener("click", () => switchView("sites"));
+
+async function loadFmFiles() {
+  const box = $("#files-list");
+  box.innerHTML = `<div class="skel" style="height:62px;margin-bottom:8px"></div><div class="skel" style="height:62px;margin-bottom:8px"></div><div class="skel" style="height:62px"></div>`;
+  try {
+    const d = await api(`/api/sites/${FM.siteId}/files`);
+    FM.files = d.files;
+    renderFm();
+  } catch (e) { box.innerHTML = `<div class="empty">Couldn't load files.</div>`; }
+}
+
+function fmEntries() {
+  // build folder listing for FM.dir from flat file list
+  const prefix = FM.dir ? FM.dir + "/" : "";
+  const dirs = new Set(), files = [];
+  for (const f of FM.files) {
+    const rel = f.path.startsWith("/") ? f.path.slice(1) : f.path;
+    if (!rel.startsWith(prefix)) continue;
+    const rest = rel.slice(prefix.length);
+    if (!rest) continue;
+    const slash = rest.indexOf("/");
+    if (slash === -1) files.push({ ...f, name: rest });
+    else dirs.add(rest.slice(0, slash));
+  }
+  return { dirs: [...dirs].sort(), files: files.sort((a, b) => a.name.localeCompare(b.name)) };
+}
+
+function fileIcon(name) {
+  if (/\.(png|jpe?g|gif|webp|svg|ico)$/i.test(name)) return ICONS.img;
+  return ICONS.file;
+}
+
+function renderFm() {
+  const { dirs, files } = fmEntries();
+  // breadcrumbs
+  const parts = FM.dir ? FM.dir.split("/") : [];
+  let crumbs = `<button data-crumb="" class="${!FM.dir ? "on" : ""}">/</button>`;
+  let acc = "";
+  parts.forEach((p, i) => {
+    acc += (acc ? "/" : "") + p;
+    crumbs += `<button data-crumb="${esc(acc)}" class="${i === parts.length - 1 ? "on" : ""}">${esc(p)}</button>`;
+  });
+  $("#crumbs").innerHTML = crumbs;
+  $$("#crumbs [data-crumb]").forEach((b) => b.addEventListener("click", () => { FM.dir = b.dataset.crumb; renderFm(); }));
+  $("#files-sub").textContent = `${FM.files.length} files · tap a file to open its URL`;
+
+  const box = $("#files-list");
+  if (!dirs.length && !files.length) {
+    box.innerHTML = `<div class="empty">${ICONS.folder}<b>Empty folder</b>Upload files with the + button above.</div>`;
+    return;
+  }
+  box.innerHTML =
+    dirs.map((d) => `<div class="frow dir" data-dir="${esc(d)}">
+        <div class="fic">${ICONS.folder}</div>
+        <div class="fn">${esc(d)}<small>folder</small></div>
+      </div>`).join("") +
+    files.map((f) => {
+      const full = (FM.dir ? FM.dir + "/" : "") + f.name;
+      const url = `https://${FM.site.subdomain}.${BASE}/${full}`;
+      return `<div class="frow" data-file="${esc(full)}">
+        <div class="fic">${fileIcon(f.name)}</div>
+        <div class="fn">${esc(f.name)}<small>${fmtMB(f.size)}${f.name === "index.html" && !FM.dir ? " · homepage" : ""}</small></div>
+        <button class="fopen" data-openfile="${esc(url)}">Open</button>
+        <button class="fdel" data-delfile="${esc(full)}" aria-label="Delete">${ICONS.trash}</button>
+      </div>`;
+    }).join("");
+  $$("#files-list [data-dir]").forEach((el) => el.addEventListener("click", () => {
+    FM.dir = FM.dir ? FM.dir + "/" + el.dataset.dir : el.dataset.dir;
+    renderFm();
+  }));
+  $$("#files-list [data-openfile]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation(); window.open(b.dataset.openfile, "_blank", "noopener");
+  }));
+  $$("#files-list [data-delfile]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const p = b.dataset.delfile;
+    confirmDlg("Delete file?", "/" + p + " will be removed from your site.", "Delete", async () => {
+      try {
+        await api(`/api/sites/${FM.siteId}/files`, { method: "DELETE", body: JSON.stringify({ path: "/" + p }) });
+        toast("File deleted.");
+        loadFmFiles(); loadSites();
+      } catch (err) { toast(err.message); }
+    });
+  }));
+}
+
+// upload into current folder
+$("#files-upload-btn").addEventListener("click", () => $("#files-input").click());
+$("#files-input").addEventListener("change", async (e) => {
+  const picked = [...e.target.files];
+  e.target.value = "";
+  if (!picked.length) return;
+  toast(`Uploading ${picked.length} file(s)…`);
+  let okN = 0;
+  for (const f of picked) {
+    const name = (FM.dir ? FM.dir + "/" : "") + f.name;
+    try {
+      let bytes = new Uint8Array(await f.arrayBuffer());
+      if (ME.tier === "free" && name.toLowerCase() === "index.html" && !FM.dir) {
+        try { bytes = injectBadge(new TextDecoder().decode(bytes)); } catch {}
+      }
+      const r = await fetch(`/api/sites/${FM.siteId}/files`, {
+        method: "POST", headers: { "X-Filename": name }, body: bytes });
+      const d = await r.json().catch(() => ({}));
+      if (d.ok) okN++;
+      else toast(d.message || `Failed: ${f.name}`);
+    } catch { toast(`Failed: ${f.name}`); }
+  }
+  if (okN) { toast(`Uploaded ${okN} file(s).`); loadFmFiles(); loadSites(); }
 });
 
 // ---------- billing ----------
