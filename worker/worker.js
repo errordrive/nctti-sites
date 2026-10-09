@@ -2,7 +2,8 @@
  *
  * Routes (set after deploy):
  *   sites.nctti.tech/api/*   -> this worker (API)
- *   *.sites.nctti.tech/*      -> this worker (serves user files from Telegram)
+ *   *.sites.nctti.tech/*      -> this worker (legacy; HTTPS limited by Universal SSL)
+ *   *.nctti.tech/*            -> this worker (user sites; free Universal SSL covers 1 level)
  * Frontend static files live on Cloudflare Pages (same domain).
  *
  * Bindings: DB (d1). Secrets: TG_BOT_TOKEN, TG_CHANNEL_ID, TRXPAY_API_KEY,
@@ -167,7 +168,7 @@ async function apiRouter(req, env, ctx, url) {
     const items = (rows.results || []).map((s) => ({
       id: s.id, subdomain: s.subdomain, title: s.title, description: s.description,
       owner: s.owner_name, likes: s.like_count, liked: false,
-      url: `https://${s.subdomain}.${base}`, created_at: s.created_at,
+      url: `https://${s.subdomain}.nctti.tech`, created_at: s.created_at,
     }));
     if (u) {
       const likedRows = await env.DB.prepare(
@@ -234,7 +235,7 @@ async function apiRouter(req, env, ctx, url) {
     const tier = tierOf(await activeSub(env, u.id));
     const rows = await env.DB.prepare("SELECT * FROM sites WHERE user_id = ? ORDER BY created_at DESC").bind(u.id).all();
     const sites = await Promise.all((rows.results || []).map(async (s) => ({
-      ...s, url: `https://${s.subdomain}.${base}`,
+      ...s, url: `https://${s.subdomain}.nctti.tech`,
       likes: (await env.DB.prepare("SELECT COUNT(*) c FROM likes WHERE site_id = ?").bind(s.id).first()).c,
     })));
     return ok({ sites, tier, limits: TIERS[tier] });
@@ -254,7 +255,7 @@ async function apiRouter(req, env, ctx, url) {
     const r = await env.DB.prepare("INSERT INTO sites (user_id, subdomain, title) VALUES (?,?,?)")
       .bind(u.id, subdomain.toLowerCase(), (title || subdomain).slice(0, 80)).run();
     const site = await env.DB.prepare("SELECT * FROM sites WHERE id = ?").bind(r.meta.last_row_id).first();
-    return ok({ site: { ...site, url: `https://${site.subdomain}.${base}` } });
+    return ok({ site: { ...site, url: `https://${site.subdomain}.nctti.tech` } });
   }
 
   let m;
@@ -365,7 +366,7 @@ async function apiRouter(req, env, ctx, url) {
     const total = await env.DB.prepare("SELECT COALESCE(SUM(size),0) s, COUNT(*) c FROM site_files WHERE site_id = ?").bind(site.id).first();
     await env.DB.prepare("UPDATE sites SET storage_bytes = ? WHERE id = ?").bind(total.s, site.id).run();
     // bust cache for this site's files
-    return ok({ files: total.c, bytes: total.s, url: `https://${site.subdomain}.${base}` });
+    return ok({ files: total.c, bytes: total.s, url: `https://${site.subdomain}.nctti.tech` });
   }
 
   if ((m = path.match(/^\/sites\/(\d+)\/like$/)) && method === "POST") {
@@ -446,7 +447,7 @@ async function apiRouter(req, env, ctx, url) {
     if (path === "/admin/sites" && method === "GET") {
       const rows = await env.DB.prepare(
         "SELECT s.*, u.email AS owner_email FROM sites s JOIN users u ON u.id = s.user_id ORDER BY s.created_at DESC").all();
-      return ok({ sites: (rows.results || []).map((s) => ({ ...s, url: `https://${s.subdomain}.${base}` })) });
+      return ok({ sites: (rows.results || []).map((s) => ({ ...s, url: `https://${s.subdomain}.nctti.tech` })) });
     }
     if (path === "/admin/orders" && method === "GET") {
       const rows = await env.DB.prepare(
@@ -503,6 +504,12 @@ async function serveSite(req, env, ctx, sub, pathname) {
 }
 
 // ---------- entry ----------
+const RESERVED_SUBS = new Set([
+  "www", "api", "app", "admin", "blog", "support", "help", "status", "cdn", "static",
+  "dev", "staging", "demo", "test", "mail", "email", "vpn", "music", "shop", "store",
+  "ai", "trxpay", "messenger", "tv", "sites", "pay", "billing", "docs", "forum",
+]);
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
@@ -512,6 +519,14 @@ export default {
       if (host === base) {
         if (url.pathname.startsWith("/api/")) return apiRouter(req, env, ctx, url);
         return new Response("Not found", { status: 404 }); // Pages serves the frontend
+      }
+      // User sites on *.nctti.tech (single-level: free Universal SSL covers it)
+      if (host.endsWith(".nctti.tech")) {
+        const sub = host.slice(0, -".nctti.tech".length);
+        if (sub && !sub.includes(".") && !RESERVED_SUBS.has(sub)) {
+          return serveSite(req, env, ctx, sub, url.pathname);
+        }
+        return new Response("Not found", { status: 404 });
       }
       if (host.endsWith("." + base)) {
         const sub = host.slice(0, -(base.length + 1));
