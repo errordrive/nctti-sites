@@ -1,52 +1,116 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1d4ed8">
 <title>Dashboard — NCTTI Sites</title>
-<link rel="stylesheet" href="/assets/css/main.css">
+<link rel="stylesheet" href="/assets/css/dash.css">
 </head>
 <body>
 
-<nav class="nav">
-  <div class="wrap">
-    <a class="logo" href="/"><span class="dot"></span>NCTTI Sites</a>
-    <div class="nav-right">
-      <span id="user-name" style="font-size:14px;color:var(--muted)"></span>
-      <a class="btn btn-ghost btn-sm" href="/" target="_blank" rel="noopener">View site</a>
-      <button class="btn btn-ghost btn-sm" id="logout">Log out</button>
-    </div>
+<header class="appbar">
+  <div class="appbar-in">
+    <a class="brand" href="/"><span class="dot"></span>NCTTI Sites</a>
+    <span class="sp"></span>
+    <nav class="segtabs" id="segtabs">
+      <button data-view="sites" class="on">Sites</button>
+      <button data-view="billing">Billing</button>
+      <button data-view="account">Account</button>
+    </nav>
+    <span class="plan-pill" id="plan-pill">Free</span>
+    <button class="icon-btn" id="theme-btn" aria-label="Toggle theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+    </button>
   </div>
+</header>
+
+<main class="page">
+  <!-- SITES -->
+  <section class="view on" id="view-sites">
+    <div class="view-head">
+      <div><h1>My sites</h1><p id="quota-line"></p></div>
+    </div>
+    <div id="sites-list"></div>
+  </section>
+
+  <!-- BILLING -->
+  <section class="view" id="view-billing">
+    <div class="view-head"><div><h1>Billing</h1><p>Plans billed via bKash, Nagad or Rocket.</p></div></div>
+    <div id="billing-box"></div>
+  </section>
+
+  <!-- ACCOUNT -->
+  <section class="view" id="view-account">
+    <div class="view-head"><div><h1>Account</h1></div></div>
+    <div id="account-box"></div>
+  </section>
+</main>
+
+<button class="fab" id="fab" aria-label="New site">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+</button>
+
+<nav class="tabbar" id="tabbar">
+  <button data-view="sites" class="on">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+    Sites</button>
+  <button data-view="billing">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M2.5 10h19"/></svg>
+    Billing</button>
+  <button data-view="account">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-5.5 8-5.5s6.5 1.5 8 5.5"/></svg>
+    Account</button>
 </nav>
 
-<div class="wrap" style="padding-bottom:60px">
-  <div id="plan-banner"></div>
-
-  <div class="dash-head">
-    <h1>My sites</h1>
-    <button class="btn btn-primary btn-sm" id="new-site-btn">+ New site</button>
-  </div>
-  <div id="sites"></div>
-
-  <div class="dash-head" style="margin-top:44px"><h1>Billing</h1></div>
-  <div class="card" id="billing"></div>
-</div>
-
-<div class="modal-bg" id="site-modal">
-  <div class="modal">
+<!-- new site sheet -->
+<div class="sheet-bg" id="sheet-site">
+  <div class="sheet">
+    <div class="grab"></div>
     <h3>New site</h3>
-    <p class="sub">Pick a subdomain for your project.</p>
+    <p class="sub">Pick a subdomain — it's yours instantly.</p>
     <div class="form-err" id="site-err"></div>
     <div class="field">
       <label>Subdomain</label>
       <div style="display:flex;gap:8px;align-items:center">
-        <input class="input" id="new-sub" placeholder="my-portfolio" style="font-family:var(--mono)">
-        <span class="mono" id="base-domain" style="white-space:nowrap;color:var(--muted)"></span>
+        <input class="input mono" id="new-sub" placeholder="my-portfolio" autocapitalize="off" autocomplete="off" spellcheck="false" style="flex:1">
       </div>
-      <div class="hint">3–30 chars: lowercase letters, numbers, hyphens.</div>
+      <div class="hint">.<span id="base-domain">sites.nctti.tech</span> · 3–30 chars, a–z 0–9 hyphen</div>
     </div>
     <div class="field"><label>Site title</label><input class="input" id="new-title" placeholder="My Portfolio"></div>
-    <button class="btn btn-primary" id="create-site" style="width:100%">Create site</button>
+    <button class="btn btn-primary btn-block" id="create-site">Create site</button>
+  </div>
+</div>
+
+<!-- upload sheet -->
+<div class="sheet-bg" id="sheet-upload">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3>Deploy files</h3>
+    <p class="sub" id="upload-sub">Upload a zip of your static site.</p>
+    <div class="form-err" id="upload-err"></div>
+    <div class="dropzone" id="dropzone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+      <b>Tap to choose a .zip</b>
+      or drop it here
+      <input type="file" id="zip-input" accept=".zip" hidden>
+    </div>
+    <div class="pbar" id="pbar" style="display:none"><i></i></div>
+    <div id="upl-list"></div>
+    <button class="btn btn-primary btn-block" id="start-upload" style="margin-top:14px" disabled>Deploy</button>
+  </div>
+</div>
+
+<!-- confirm sheet -->
+<div class="sheet-bg" id="sheet-confirm">
+  <div class="sheet" style="max-width:420px">
+    <div class="grab"></div>
+    <h3 id="confirm-title">Are you sure?</h3>
+    <p class="sub" id="confirm-sub"></p>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-ghost" id="confirm-no" style="flex:1">Cancel</button>
+      <button class="btn btn-danger-soft" id="confirm-yes" style="flex:1">Delete</button>
+    </div>
   </div>
 </div>
 
