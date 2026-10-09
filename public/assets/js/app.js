@@ -101,7 +101,7 @@ async function bootInner() {
   ME = d;
   const t = await api("/api/tiers");
   TIERS = t.tiers; BASE = t.base_domain;
-  $("#base-domain").textContent = BASE;
+  $("#base-domain").textContent = "nctti.tech";
   $("#plan-pill").textContent = TIERS[ME.tier].name;
   const q = new URLSearchParams(location.search);
   renderAccount();
@@ -133,7 +133,7 @@ async function loadSites() {
           <div class="avatar">${esc((s.title || s.subdomain).slice(0, 1))}</div>
           <div class="site-meta">
             <div class="t">${esc(s.title || s.subdomain)}</div>
-            <a class="u" href="${s.url}" target="_blank" rel="noopener">${s.subdomain}.${BASE}</a>
+            <a class="u" href="${s.url}" target="_blank" rel="noopener">${s.url.replace("https://","")}</a>
             <div class="stats"><span>${ICONS.heart.replace("<svg", '<svg width="13" height="13" style="vertical-align:-2px"')} ${s.likes}</span><span>${fmtMB(s.storage_bytes)}</span></div>
           </div>
           <span class="pill ${s.suspended ? "susp" : s.published ? "live" : "draft"}">${s.suspended ? "suspended" : s.published ? "live" : "draft"}</span>
@@ -194,7 +194,7 @@ function bindSiteActions() {
   }));
   $$("[data-del]").forEach((b) => b.addEventListener("click", () => {
     const s = SITES.find((x) => x.id == b.dataset.del);
-    confirmDlg("Delete this site?", `${s.subdomain}.${BASE} will go offline permanently.`, "Delete", async () => {
+    confirmDlg("Delete this site?", `${s.url.replace("https://","")} will go offline permanently.`, "Delete", async () => {
       try { await api(`/api/sites/${s.id}`, { method: "DELETE" }); toast("Site deleted."); loadSites(); }
       catch (e) { toast(e.message); }
     });
@@ -253,7 +253,7 @@ function openUpload(siteId) {
   $("#pbar").style.display = "none";
   $("#start-upload").disabled = true;
   const s = SITES.find((x) => x.id == siteId);
-  $("#upload-sub").textContent = `Deploying to ${s.subdomain}.${BASE}`;
+  $("#upload-sub").textContent = `Deploying to ${s.url.replace("https://","")}`;
   openSheet("#sheet-upload");
 }
 const dz = $("#dropzone");
@@ -332,7 +332,7 @@ let FM = { siteId: null, site: null, files: [], dir: "" };
 
 function openFiles(siteId) {
   FM = { siteId, site: SITES.find((x) => x.id == siteId), files: [], dir: "" };
-  $("#files-title").textContent = FM.site.subdomain + "." + BASE;
+  $("#files-title").textContent = FM.site.url.replace("https://","");
   loadFmFiles();
   switchView("files");
 }
@@ -395,7 +395,7 @@ function renderFm() {
       </div>`).join("") +
     files.map((f) => {
       const full = (FM.dir ? FM.dir + "/" : "") + f.name;
-      const url = `https://${FM.site.subdomain}.${BASE}/${full}`;
+      const url = `${FM.site.url}/${full}`;
       return `<div class="frow" data-file="${esc(full)}">
         <div class="fic">${fileIcon(f.name)}</div>
         <div class="fn">${esc(f.name)}<small>${fmtMB(f.size)}${f.name === "index.html" && !FM.dir ? " · homepage" : ""}</small></div>
