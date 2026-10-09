@@ -1,0 +1,1 @@
+{"description":"NCTTI Sites — free subdomain hosting + project showcase + services marketplace","engines":{"node":">=22"},"name":"nctti-sites","scripts":{"start":"node server.js"},"type":"module","version":"1.0.0"}
