@@ -29,9 +29,15 @@ async function api(path, opts = {}) {
   return d;
 }
 
+// ---------- safe storage ----------
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+
 // ---------- theme ----------
 function initTheme() {
-  const saved = localStorage.getItem("ns-theme");
+  const saved = store.get("ns-theme");
   const theme = saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   document.documentElement.dataset.theme = theme;
 }
@@ -39,7 +45,7 @@ initTheme();
 $("#theme-btn").addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   document.documentElement.dataset.theme = next;
-  localStorage.setItem("ns-theme", next);
+  store.set("ns-theme", next);
 });
 
 // ---------- views ----------
@@ -72,6 +78,18 @@ $("#confirm-yes").addEventListener("click", () => { closeAllSheets(); confirmFn 
 let ME = null, TIERS = null, BASE = "", SITES = [];
 
 async function boot() {
+  try {
+    await bootInner();
+    window.__booted = true;
+  } catch (e) {
+    console.error(e);
+    const box = $("#sites-list");
+    if (box) box.innerHTML = `<div class="empty"><b>Couldn't load dashboard</b>${esc(e.message || "Unknown error")}<br><br>
+      <button class="btn btn-primary" onclick="location.reload()">Retry</button></div>`;
+  }
+}
+
+async function bootInner() {
   $("#sites-list").innerHTML = `<div class="skel" style="height:120px;margin-bottom:12px"></div><div class="skel" style="height:120px"></div>`;
   const d = await api("/api/me").catch(() => null);
   if (!d) { location.href = "/"; return; }
