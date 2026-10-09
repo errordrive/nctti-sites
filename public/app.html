@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — NCTTI Sites</title>
+<link rel="stylesheet" href="/assets/css/main.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="logo" href="/"><span class="dot"></span>NCTTI Sites</a>
+    <div class="nav-right">
+      <span id="user-name" style="font-size:14px;color:var(--muted)"></span>
+      <a class="btn btn-ghost btn-sm" href="/" target="_blank" rel="noopener">View site</a>
+      <button class="btn btn-ghost btn-sm" id="logout">Log out</button>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap" style="padding-bottom:60px">
+  <div id="plan-banner"></div>
+
+  <div class="dash-head">
+    <h1>My sites</h1>
+    <button class="btn btn-primary btn-sm" id="new-site-btn">+ New site</button>
+  </div>
+  <div id="sites"></div>
+
+  <div class="dash-head" style="margin-top:44px"><h1>Billing</h1></div>
+  <div class="card" id="billing"></div>
+</div>
+
+<div class="modal-bg" id="site-modal">
+  <div class="modal">
+    <h3>New site</h3>
+    <p class="sub">Pick a subdomain for your project.</p>
+    <div class="form-err" id="site-err"></div>
+    <div class="field">
+      <label>Subdomain</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="input" id="new-sub" placeholder="my-portfolio" style="font-family:var(--mono)">
+        <span class="mono" id="base-domain" style="white-space:nowrap;color:var(--muted)"></span>
+      </div>
+      <div class="hint">3–30 chars: lowercase letters, numbers, hyphens.</div>
+    </div>
+    <div class="field"><label>Site title</label><input class="input" id="new-title" placeholder="My Portfolio"></div>
+    <button class="btn btn-primary" id="create-site" style="width:100%">Create site</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="/assets/js/app.js"></script>
+</body>
+</html>
