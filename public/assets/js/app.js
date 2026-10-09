@@ -108,17 +108,9 @@ async function loadSites() {
     </div>`).join("");
 
   $$("[data-deploy]").forEach((inp) => inp.addEventListener("change", async () => {
-    const f = inp.files[0]; if (!f) return;
-    toast("Uploading & deploying…");
-    const fd = new FormData(); fd.append("file", f);
-    try {
-      const r = await fetch(`/api/sites/${inp.dataset.deploy}/deploy`, { method: "POST", body: fd });
-      const dd = await r.json();
-      if (!dd.ok) throw new Error(dd.message);
-      toast(`Deployed ${dd.files} files.`);
-      loadSites();
-    } catch (e) { toast(e.message); }
-    inp.value = "";
+    const f = inp.files[0]; inp.value = ""; if (!f) return;
+    try { await deployZip(inp.dataset.deploy, f); }
+    catch (e) { toast(e.message); }
   }));
   $$("[data-pub]").forEach((b) => b.addEventListener("click", async () => {
     try {
@@ -144,6 +136,57 @@ async function loadSites() {
       toast("Saved."); loadSites();
     } catch (e) { toast(e.message); }
   }));
+}
+
+// ---- client-side zip deploy (unzips in the browser, uploads file-by-file) ----
+const BADGE_MARKER = "<!-- nctti-sites-free-badge -->";
+function injectBadge(html) {
+  if (html.includes(BADGE_MARKER)) return new TextEncoder().encode(html);
+  const badge = `${BADGE_MARKER}<a href="https://sites.nctti.tech" style="position:fixed;bottom:12px;right:12px;z-index:9999;background:#111827;color:#fff;font:12px/1.4 system-ui;padding:6px 10px;border-radius:999px;text-decoration:none;opacity:.85" target="_blank" rel="noopener">Hosted free on NCTTI Sites</a>`;
+  const out = /<\/body\s*>/i.test(html) ? html.replace(/<\/body\s*>/i, badge + "</body>") : html + badge;
+  return new TextEncoder().encode(out);
+}
+const zipSafe = (n) =>
+  n && !n.startsWith("/") && !/^[a-zA-Z]:/.test(n) &&
+  !n.split("/").some((p) => p === ".." || p === "") && !n.includes("__MACOSX");
+
+async function deployZip(siteId, file) {
+  toast("Unzipping…");
+  const buf = new Uint8Array(await file.arrayBuffer());
+  let entries;
+  try { entries = fflate.unzipSync(buf); }
+  catch { throw new Error("Invalid zip file."); }
+  let list = Object.entries(entries).filter(([n]) => !n.endsWith("/") && zipSafe(n));
+  if (!list.length) throw new Error("Zip is empty or has unsafe paths.");
+  // unwrap a single top-level folder
+  const tops = new Set(list.map(([n]) => n.split("/")[0]));
+  if (tops.size === 1) {
+    const top = [...tops][0];
+    if (list.every(([n]) => n === top || n.startsWith(top + "/")))
+      list = list.map(([n, d]) => [n.slice(top.length + 1), d]).filter(([n]) => n && zipSafe(n));
+  }
+  if (!list.some(([n]) => n.toLowerCase() === "index.html"))
+    throw new Error("index.html not found in zip (required as the entry page).");
+  const free = ME.tier === "free";
+  let i = 0;
+  for (const [name, data] of list) {
+    i++;
+    toast(`Uploading ${i}/${list.length}…`);
+    let bytes = data;
+    if (free && name.toLowerCase() === "index.html") {
+      try { bytes = injectBadge(new TextDecoder().decode(data)); } catch { /* binary? keep as-is */ }
+    }
+    const r = await fetch(`/api/sites/${siteId}/files`, {
+      method: "POST",
+      headers: { "X-Filename": name },
+      body: bytes,
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) throw new Error(d.message || `Upload failed at ${name}`);
+  }
+  const done = await api(`/api/sites/${siteId}/deploy-complete`, { method: "POST" });
+  toast(`Deployed ${done.files} files — site is live!`);
+  loadSites();
 }
 
 // new site modal
