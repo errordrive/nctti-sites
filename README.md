@@ -5,75 +5,57 @@ their static site, go live instantly, and showcase it for likes. Paid plans from
 ৳29/month (bKash/Nagad/Rocket via TrxPay Verify). The same site sells NCTTI's
 web services.
 
-Zero-dependency Node.js + SQLite (WAL). No build step.
+**100% free infrastructure — no VPS:**
+- **Frontend** → Cloudflare Pages (`public/`)
+- **Backend** → Cloudflare Worker (`worker/worker.js`, free tier, 10ms CPU budget)
+- **Database** → Cloudflare D1 (SQLite, free tier)
+- **File storage** → private Telegram channel via Bot API (Worker streams files,
+  cached at the edge). This is Telegram-as-a-CDN, for real.
 
-## Quick start (local)
+## Setup (one time)
 
-```bash
-cd nctti-sites
-cp .env.example .env   # edit: BASE_DOMAIN, APP_URL, ADMIN_EMAIL, ...
-node server.js         # -> http://localhost:3000
-```
+1. **Telegram storage bot**: talk to `@BotFather` → `/newbot` → copy the token.
+   Create a **private channel**, add the bot as **admin**.
+2. **D1**: already created (`nctti-sites`). Apply schema:
+   `worker/schema.sql` via the Cloudflare API.
+3. **Worker secrets** (never commit):
+   `TG_BOT_TOKEN`, `TG_CHANNEL_ID` (e.g. `-1001234567890`),
+   `ADMIN_EMAIL`, `TRXPAY_API_KEY`, `TRXPAY_WEBHOOK_SECRET`.
+4. Deploy Pages from `public/` → custom domain `sites.nctti.tech`.
+5. Deploy the Worker, then add routes:
+   - `sites.nctti.tech/api/*` → worker
+   - `*.sites.nctti.tech/*` → worker
 
-The first account whose email matches `ADMIN_EMAIL` becomes admin.
+## How deploys work (CPU-budget safe)
 
-> Local dev serves the app only. User subdomains (`*.sites.nctti.tech`) are
-> served by nginx on the VPS (see `ops/`).
+The browser unzips locally (fflate, no Worker CPU), then uploads files one by
+one to `POST /api/sites/:id/files` (raw bytes + `X-Filename` header). The Worker
+forwards each file to the Telegram channel via `sendDocument` and stores the
+`file_id` in D1. Serving: D1 lookup → edge cache → Telegram `getFile` stream.
 
-## Environment
+Free-tier sites get a "Hosted free on NCTTI Sites" badge injected into
+`index.html` **in the browser** before upload.
 
-| Var | Purpose |
-|---|---|
-| `PORT` | app port (default 3000) |
-| `BASE_DOMAIN` | `sites.nctti.tech` |
-| `APP_URL` | public URL, used for payment return/webhook |
-| `SITES_ROOT` | where deployed sites live (`./data/sites` local, `/var/www/sites` VPS) |
-| `DB_PATH` | sqlite file |
-| `ADMIN_EMAIL` | this email becomes admin on signup |
-| `COOKIE_SECURE` | `1` in production (https) |
-| `TRXPAY_API_KEY` | `tp_live_…` from TrxPay admin — **server only, never commit** |
-| `TRXPAY_WEBHOOK_SECRET` | webhook HMAC secret from TrxPay admin |
+## Billing (TrxPay Verify)
 
-## Billing flow (TrxPay Verify)
+Same flow as v1: checkout → TrxPay hosted payment → `payment.success` webhook
+(HMAC verified) → subscription activated (30/365 days). Without TrxPay keys,
+billing endpoints return `billing_off` — free tier works fully.
 
-1. User picks a plan → `POST /api/billing/checkout` → backend creates a TrxPay
-   **hosted payment** (key stays server-side) → browser redirects to `pay_url`.
-2. Buyer pays via bKash/Nagad/Rocket and enters the TrxID on TrxPay's page.
-3. TrxPay POSTs `payment.success` to `/api/webhooks/trxpay` → HMAC verified,
-   deduped on `event_id` → subscription activated (30 / 365 days).
-
-Test with a `tp_test_…` key + the TrxPay app's test-payment button.
-
-## Deploy to VPS
-
-1. Point DNS: `A sites.nctti.tech → VPS IP`, `A *.sites.nctti.tech → VPS IP`
-   (grey cloud / DNS-only in Cloudflare).
-2. `scp -r nctti-sites root@VPS:/opt/` then on the VPS:
-   ```bash
-   cd /opt/nctti-sites && chmod +x ops/setup-vps.sh && ./ops/setup-vps.sh
-   cp .env.example .env   # fill real values (TRXPAY keys via Secure Vault)
-   pm2 start server.js --name nctti-sites && pm2 save && pm2 startup
-   ```
-3. Test: sign up → create site `demo` → upload a zip with `index.html` →
-   open `https://demo.sites.nctti.tech`.
-
-## Safety notes (free hosting = abuse magnet)
-
-- **Static only**: nginx never executes user files; `.php/.py/.sh` explicitly denied.
-- Zip uploads are path-validated (zip-slip protection), `index.html` required.
-- Free-tier sites get a small "Hosted free on NCTTI Sites" badge injected at deploy.
-- Admin panel: suspend users/sites, review orders. Report abuse → suspend.
-
-## Project layout
+## Layout
 
 ```
-server.js            HTTP server + all routes
-lib/db.js            SQLite schema + queries
-lib/auth.js          scrypt auth, sessions, multipart parser
-lib/sites.js         subdomain validation, safe zip deploy, quotas
-lib/billing.js       tiers, TrxPay hosted payments, webhook verify
-lib/env.js           tiny .env loader
-public/              landing + showcase + pricing + services (index.html)
-                     dashboard (app.html), admin (admin.html)
-ops/                 nginx wildcard config, VPS setup script
+public/        landing + showcase + pricing + services, dashboard, admin
+worker/
+  worker.js    API + user-site file server (single file, zero npm deps)
+  schema.sql   D1 schema
+legacy-node/   v1 Node.js implementation (tested, kept for reference)
 ```
+
+## Limits to know (free tiers)
+
+- Workers: 100k req/day, 10ms CPU/req — all hot paths are I/O-bound, fine.
+- D1: 5GB, 25M reads/day — fine.
+- Telegram Bot API: 50MB/file upload, 20MB/file download — site files are small.
+- Passwords: PBKDF2-HMAC-SHA256 x20k (WebCrypto-native; scrypt would blow the
+  10ms CPU budget — documented tradeoff for free tier).
