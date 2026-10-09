@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — NCTTI Sites</title>
+<link rel="stylesheet" href="/assets/css/main.css">
+</head>
+<body>
+<nav class="nav">
+  <div class="wrap">
+    <a class="logo" href="/"><span class="dot"></span>NCTTI Sites</a>
+    <div class="nav-right">
+      <a class="btn btn-ghost btn-sm" href="/app">Dashboard</a>
+    </div>
+  </div>
+</nav>
+<div class="wrap" style="padding:34px 20px 60px">
+  <h1 style="font-size:26px;margin-bottom:20px">Admin</h1>
+  <div class="tabs" style="justify-content:flex-start">
+    <button class="tab on" data-v="users">Users</button>
+    <button class="tab" data-v="sites">Sites</button>
+    <button class="tab" data-v="orders">Orders</button>
+  </div>
+  <div id="view"></div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="/assets/js/admin.js"></script>
+</body>
+</html>
