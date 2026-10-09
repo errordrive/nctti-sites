@@ -143,6 +143,8 @@ const isSafePath = (p) =>
   !/\/\./.test(p) && !p.includes("__MACOSX");
 
 async function apiRouter(req, env, ctx, url) {
+  const base = env.BASE_DOMAIN || "sites.nctti.tech";
+  const appUrl = env.APP_URL || "https://sites.nctti.tech";
   const path = url.pathname.replace(/^\/api/, "") || "/";
   const method = req.method;
   const body = async () => req.json().catch(() => ({}));
@@ -150,7 +152,7 @@ async function apiRouter(req, env, ctx, url) {
 
   // ----- public -----
   if (path === "/tiers" && method === "GET")
-    return ok({ tiers: TIERS, base_domain: env.BASE_DOMAIN });
+    return ok({ tiers: TIERS, base_domain: base });
 
   if (path === "/showcase" && method === "GET") {
     const u = await currentUser(req, env);
@@ -165,7 +167,7 @@ async function apiRouter(req, env, ctx, url) {
     const items = (rows.results || []).map((s) => ({
       id: s.id, subdomain: s.subdomain, title: s.title, description: s.description,
       owner: s.owner_name, likes: s.like_count, liked: false,
-      url: `https://${s.subdomain}.${env.BASE_DOMAIN}`, created_at: s.created_at,
+      url: `https://${s.subdomain}.${base}`, created_at: s.created_at,
     }));
     if (u) {
       const likedRows = await env.DB.prepare(
@@ -232,7 +234,7 @@ async function apiRouter(req, env, ctx, url) {
     const tier = tierOf(await activeSub(env, u.id));
     const rows = await env.DB.prepare("SELECT * FROM sites WHERE user_id = ? ORDER BY created_at DESC").bind(u.id).all();
     const sites = await Promise.all((rows.results || []).map(async (s) => ({
-      ...s, url: `https://${s.subdomain}.${env.BASE_DOMAIN}`,
+      ...s, url: `https://${s.subdomain}.${base}`,
       likes: (await env.DB.prepare("SELECT COUNT(*) c FROM likes WHERE site_id = ?").bind(s.id).first()).c,
     })));
     return ok({ sites, tier, limits: TIERS[tier] });
@@ -252,7 +254,7 @@ async function apiRouter(req, env, ctx, url) {
     const r = await env.DB.prepare("INSERT INTO sites (user_id, subdomain, title) VALUES (?,?,?)")
       .bind(u.id, subdomain.toLowerCase(), (title || subdomain).slice(0, 80)).run();
     const site = await env.DB.prepare("SELECT * FROM sites WHERE id = ?").bind(r.meta.last_row_id).first();
-    return ok({ site: { ...site, url: `https://${site.subdomain}.${env.BASE_DOMAIN}` } });
+    return ok({ site: { ...site, url: `https://${site.subdomain}.${base}` } });
   }
 
   let m;
@@ -329,7 +331,7 @@ async function apiRouter(req, env, ctx, url) {
     const total = await env.DB.prepare("SELECT COALESCE(SUM(size),0) s, COUNT(*) c FROM site_files WHERE site_id = ?").bind(site.id).first();
     await env.DB.prepare("UPDATE sites SET storage_bytes = ? WHERE id = ?").bind(total.s, site.id).run();
     // bust cache for this site's files
-    return ok({ files: total.c, bytes: total.s, url: `https://${site.subdomain}.${env.BASE_DOMAIN}` });
+    return ok({ files: total.c, bytes: total.s, url: `https://${site.subdomain}.${base}` });
   }
 
   if ((m = path.match(/^\/sites\/(\d+)\/like$/)) && method === "POST") {
@@ -361,8 +363,8 @@ async function apiRouter(req, env, ctx, url) {
       method: "POST",
       headers: { Authorization: `Bearer ${env.TRPAY_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({ amount, order_ref: orderRef, customer_name: u.name,
-        return_url: `${env.APP_URL}/app?billing=done`,
-        webhook_url: `${env.APP_URL}/api/webhooks/trxpay`,
+        return_url: `${appUrl}/app?billing=done`,
+        webhook_url: `${appUrl}/api/webhooks/trxpay`,
         expires_in: 1800, metadata: { product: "nctti-sites-subscription" } }),
     });
     const data = await r.json().catch(() => ({}));
@@ -410,7 +412,7 @@ async function apiRouter(req, env, ctx, url) {
     if (path === "/admin/sites" && method === "GET") {
       const rows = await env.DB.prepare(
         "SELECT s.*, u.email AS owner_email FROM sites s JOIN users u ON u.id = s.user_id ORDER BY s.created_at DESC").all();
-      return ok({ sites: (rows.results || []).map((s) => ({ ...s, url: `https://${s.subdomain}.${env.BASE_DOMAIN}` })) });
+      return ok({ sites: (rows.results || []).map((s) => ({ ...s, url: `https://${s.subdomain}.${base}` })) });
     }
     if (path === "/admin/orders" && method === "GET") {
       const rows = await env.DB.prepare(
